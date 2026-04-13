@@ -1,51 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 import { analyzeMessage } from "@/lib/claude";
 import { validateMessageText } from "@/lib/validation";
-import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_CLEANUP_INTERVAL_MS } from "@/lib/constants";
-
-interface RateLimitEntry {
-  timestamps: number[];
-}
-
-const rateLimitMap = new Map<string, RateLimitEntry>();
-
-let lastCleanup = Date.now();
-
-function cleanupRateLimitMap() {
-  const now = Date.now();
-  if (now - lastCleanup < RATE_LIMIT_CLEANUP_INTERVAL_MS) return;
-  lastCleanup = now;
-
-  Array.from(rateLimitMap.entries()).forEach(([ip, entry]) => {
-    entry.timestamps = entry.timestamps.filter(
-      (t) => now - t < RATE_LIMIT_WINDOW_MS
-    );
-    if (entry.timestamps.length === 0) {
-      rateLimitMap.delete(ip);
-    }
-  });
-}
-
-function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
-  cleanupRateLimitMap();
-
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip) || { timestamps: [] };
-
-  entry.timestamps = entry.timestamps.filter(
-    (t) => now - t < RATE_LIMIT_WINDOW_MS
-  );
-
-  if (entry.timestamps.length >= RATE_LIMIT_MAX) {
-    const oldest = entry.timestamps[0];
-    const retryAfter = Math.ceil((oldest + RATE_LIMIT_WINDOW_MS - now) / 1000);
-    return { allowed: false, retryAfter };
-  }
-
-  entry.timestamps.push(now);
-  rateLimitMap.set(ip, entry);
-  return { allowed: true };
-}
+import { checkRateLimit } from "@/lib/rate-limit";
+import { checkUsage, incrementUsage, saveCheck } from "@/lib/usage";
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,6 +20,40 @@ export async function POST(request: NextRequest) {
           retryAfter: rateCheck.retryAfter,
         },
         { status: 429 }
+      );
+    }
+
+    let userId: string | undefined;
+    try {
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            getAll() {
+              return request.cookies.getAll();
+            },
+            setAll() {},
+          },
+        }
+      );
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) userId = user.id;
+    } catch {
+      // No auth — continue as anonymous
+    }
+
+    const usage = await checkUsage(userId, ip);
+    if (!usage.allowed) {
+      return NextResponse.json(
+        {
+          error: "Daily limit reached. Upgrade to Pro for unlimited checks.",
+          upgrade: true,
+          remaining: 0,
+        },
+        { status: 403 }
       );
     }
 
@@ -93,7 +85,10 @@ export async function POST(request: NextRequest) {
       } catch (secondError) {
         const err = secondError as Error & { status?: number };
 
-        if (err.message?.includes("timeout") || err.message?.includes("Timeout")) {
+        if (
+          err.message?.includes("timeout") ||
+          err.message?.includes("Timeout")
+        ) {
           return NextResponse.json(
             { error: "Analysis timed out. Please try again." },
             { status: 504 }
@@ -101,13 +96,32 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json(
-          { error: "Analysis temporarily unavailable. Please try again later." },
+          {
+            error:
+              "Analysis temporarily unavailable. Please try again later.",
+          },
           { status: 502 }
         );
       }
     }
 
-    return NextResponse.json({ success: true, result });
+    await incrementUsage(userId, ip);
+
+    if (userId) {
+      await saveCheck(
+        userId,
+        text as string,
+        result as unknown as Record<string, unknown>,
+        ip
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      result,
+      remaining: usage.remaining - 1,
+      isPro: usage.isPro,
+    });
   } catch {
     return NextResponse.json(
       { error: "An unexpected error occurred." },

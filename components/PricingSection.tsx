@@ -1,10 +1,32 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 
 interface PricingSectionProps {
   fullPage?: boolean;
 }
 
 export default function PricingSection({ fullPage }: PricingSectionProps) {
+  const [loading, setLoading] = useState(false);
+
+  async function handleCheckout() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else if (res.status === 401) {
+        window.location.href = "/auth/login";
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <section className={fullPage ? "" : "py-16"}>
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -27,13 +49,15 @@ export default function PricingSection({ fullPage }: PricingSectionProps) {
             </p>
             <ul className="mt-6 space-y-3 text-sm text-gray-700">
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span> 3 checks per day
+                <span className="text-green-600">&#10003;</span> 3 checks per
+                day
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span> Basic analysis
+                <span className="text-green-600">&#10003;</span> Basic analysis
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span> No account needed
+                <span className="text-green-600">&#10003;</span> No account
+                needed
               </li>
             </ul>
             <Link
@@ -55,24 +79,28 @@ export default function PricingSection({ fullPage }: PricingSectionProps) {
             </p>
             <ul className="mt-6 space-y-3 text-sm text-gray-700">
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span> Unlimited checks
+                <span className="text-green-600">&#10003;</span> Unlimited
+                checks
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span> Full history
+                <span className="text-green-600">&#10003;</span> Full history
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span> Priority analysis
+                <span className="text-green-600">&#10003;</span> Priority
+                analysis
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-green-600">✓</span> Detailed reports
+                <span className="text-green-600">&#10003;</span> Detailed
+                reports
               </li>
             </ul>
-            <Link
-              href="/pricing"
-              className="mt-6 block text-center w-full py-2.5 bg-[#1a1a2e] text-white rounded-lg font-medium hover:bg-[#2a2a4e] transition-colors text-sm"
+            <button
+              onClick={handleCheckout}
+              disabled={loading}
+              className="mt-6 block text-center w-full py-2.5 bg-[#1a1a2e] text-white rounded-lg font-medium hover:bg-[#2a2a4e] transition-colors text-sm disabled:opacity-50"
             >
-              Upgrade to Pro
-            </Link>
+              {loading ? "Redirecting..." : "Upgrade to Pro"}
+            </button>
           </div>
         </div>
       </div>

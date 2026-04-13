@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import UserMenu from "./UserMenu";
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -27,6 +28,7 @@ export default function Navbar() {
             >
               Pricing
             </Link>
+            <UserMenu />
           </div>
 
           <button
@@ -75,6 +77,9 @@ export default function Navbar() {
             >
               Pricing
             </Link>
+            <div className="py-2">
+              <UserMenu />
+            </div>
           </div>
         )}
       </div>
