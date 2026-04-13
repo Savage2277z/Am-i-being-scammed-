@@ -7,7 +7,8 @@ import AnalysisForm from "@/components/AnalysisForm";
 import LoadingAnalysis from "@/components/LoadingAnalysis";
 import ResultCard from "@/components/ResultCard";
 import ErrorDisplay from "@/components/ErrorDisplay";
-import { AnalysisResult, ApiResponse, AnalysisError } from "@/lib/types";
+import PricingModal from "@/components/PricingModal";
+import { AnalysisResult, AnalysisError } from "@/lib/types";
 
 function CheckPageContent() {
   const searchParams = useSearchParams();
@@ -15,6 +16,9 @@ function CheckPageContent() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submittedText, setSubmittedText] = useState<string>("");
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [isPro, setIsPro] = useState(false);
 
   useEffect(() => {
     const textParam = searchParams.get("text");
@@ -37,7 +41,13 @@ function CheckPageContent() {
         body: JSON.stringify({ text }),
       });
 
-      const data: ApiResponse = await response.json();
+      const data = await response.json();
+
+      if (response.status === 403 && data.upgrade) {
+        setShowPaywall(true);
+        setRemaining(0);
+        return;
+      }
 
       if (!response.ok) {
         const errData = data as AnalysisError;
@@ -47,6 +57,8 @@ function CheckPageContent() {
 
       if ("success" in data && data.success) {
         setResult(data.result);
+        if (data.remaining !== undefined) setRemaining(data.remaining);
+        if (data.isPro !== undefined) setIsPro(data.isPro);
       }
     } catch {
       setError("Network error. Please check your connection and try again.");
@@ -71,8 +83,36 @@ function CheckPageContent() {
         Paste any suspicious message below for an instant AI analysis.
       </p>
 
+      {remaining !== null && !isPro && remaining >= 0 && !result && !isLoading && (
+        <div className="mb-4 flex items-center gap-2 text-sm">
+          <span className="text-gray-500">
+            {remaining} of 3 free checks remaining today
+          </span>
+          {remaining === 0 && (
+            <button
+              onClick={() => setShowPaywall(true)}
+              className="text-[#1a1a2e] font-medium hover:underline"
+            >
+              Upgrade
+            </button>
+          )}
+        </div>
+      )}
+
+      {isPro && !result && !isLoading && (
+        <div className="mb-4 flex items-center gap-2 text-sm">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-gradient-to-r from-amber-400 to-amber-500 text-white uppercase tracking-wider">
+            Pro
+          </span>
+          <span className="text-gray-500">Unlimited checks</span>
+        </div>
+      )}
+
       {!result && !isLoading && (
-        <AnalysisForm onSubmit={handleAnalyze} isLoading={isLoading} />
+        <AnalysisForm
+          onSubmit={handleAnalyze}
+          isLoading={isLoading}
+        />
       )}
 
       {isLoading && <LoadingAnalysis />}
@@ -81,7 +121,9 @@ function CheckPageContent() {
         <div className="mt-6">
           <ErrorDisplay
             message={error}
-            onRetry={submittedText ? () => handleAnalyze(submittedText) : undefined}
+            onRetry={
+              submittedText ? () => handleAnalyze(submittedText) : undefined
+            }
           />
         </div>
       )}
@@ -91,6 +133,11 @@ function CheckPageContent() {
           <ResultCard result={result} onCheckAnother={handleCheckAnother} />
         </div>
       )}
+
+      <PricingModal
+        open={showPaywall}
+        onClose={() => setShowPaywall(false)}
+      />
     </div>
   );
 }

@@ -1,11 +1,4 @@
 import PricingSection from "@/components/PricingSection";
-import type { Metadata } from "next";
-
-export const metadata: Metadata = {
-  title: "Pricing — Am I Being Scammed?",
-  description:
-    "Simple, affordable pricing for AI-powered scam detection. Start free, upgrade when you need more.",
-};
 
 const FAQ = [
   {
